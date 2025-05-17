@@ -24,8 +24,7 @@ Description : Computes the response of an acoustic source to a microphone
 #define ROUND(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
 
 int box_ray(const double L[], double xv[], const double xf[]) {
- // Same as Step 2
-
+ 
     double ndx = xv[0] - xf[0];
     double ndy = xv[1] - xf[1];
     double ndz = xv[2] - xf[2];
@@ -125,9 +124,30 @@ double sim_microphone(double x, double y, double z, double* angle, char mtype) {
 
 
 void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const double* ss,
-               const double* LL, const double* beta, int nSamples, char* microphone_type,
+               const double* LL, const double* beta_input, int nSamples, char* microphone_type,
                double* angle, double* imp) {
- // Same as Step 2
+    double* beta = new double[6];
+    double reverberation_time = 0;
+
+    if (mxGetN(beta_input) == 1) {
+        double V = LL[0] * LL[1] * LL[2];
+        double S = 2 * (LL[0] * LL[2] + LL[1] * LL[2] + LL[0] * LL[1]);
+        reverberation_time = beta_input[0];
+        if (reverberation_time != 0) {
+            double alfa = 24 * V * log(10.0) / (c * S * reverberation_time);
+            if (alfa > 1)
+                mexErrMsgTxt("Error: Invalid reverberation time for room parameters.");
+            for (int i = 0; i < 6; i++)
+                beta[i] = sqrt(1 - alfa);
+        } else {
+            for (int i = 0; i < 6; i++)
+                beta[i] = 0;
+        }
+    } else {
+        for (int i = 0; i < 6; i++)
+            beta[i] = beta_input[i];
+    }
+
     double* r = new double[3];
     double* s = new double[3];
     double* L = new double[3];
@@ -225,8 +245,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
                   " s        : 1 x 3 vector of source coordinates (x,y,z) in m.\n"
                   " Lr       : 1 x 3 vector of receiver room dimensions (x,y,z) in m.\n"
                   " Ls       : 1 x 3 vector of source room dimensions (x,y,z) in m.\n"
-                  " beta_r   : 1 x 6 vector of receiver room reflection coefficients.\n"
-                  " beta_s   : 1 x 6 vector of source room reflection coefficients.\n"
+                  " beta_r   : 1 x 6 vector of reflection coefficients or single T60 value (s).\n"
+                  " beta_s   : 1 x 6 vector of reflection coefficients or single T60 value (s).\n"
                   " nsample  : number of samples to calculate.\n\n"
                   " mtype       : [omnidirectional, subcardioid, cardioid, hypercardioid, bidirectional], default is omnidirectional.\n"
                   " orientation : microphone direction [azimuth, elevation] in radians, default is [0 0].\n\n"
@@ -250,9 +270,9 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         mexErrMsgTxt("Invalid input Lr arguments!");
     if (!(mxGetN(prhs[5]) == 3) || !mxIsDouble(prhs[5]) || mxIsComplex(prhs[5]))
         mexErrMsgTxt("Invalid input Ls arguments!");
-    if (!(mxGetN(prhs[6]) == 6) || !mxIsDouble(prhs[6]) || mxIsComplex(prhs[6]))
+    if (!(mxGetN(prhs[6]) ==  1 && mxGetM(prhs[6]) ==1 || mxGetN(prhs[6]) == 6) || !mxIsDouble(prhs[6]) || mxIsComplex(prhs[6]))
         mexErrMsgTxt("Invalid input beta_r arguments!");
-    if (!(mxGetN(prhs[7]) == 6) || !mxIsDouble(prhs[7]) || mxIsComplex(prhs[7]))
+    if (!(mxGetN(prhs[7]) == 1 && mxGetM(prhs[7]) == 1 || mxGetN(prhs[7]) ==  6) || !mxIsDouble(prhs[7]) || mxIsComplex(prhs[7]))
         mexErrMsgTxt("Invalid input beta_s arguments!");
     if (!(mxGetN(prhs[8]) == 1) || !mxIsDouble(prhs[8]) || mxIsComplex(prhs[8]))
         mexErrMsgTxt("Invalid input nsample arguments!");
@@ -350,7 +370,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
                                 fdist = floor(dist);
                                 if (fdist < nSamples) {
-                                    gain = sim_microphone(Rp_plus_Rm[0], Rp_plus_Rm[1], Rp_plus_Rm[2], angle, microphone_type)
+                                    gain = sim_microphone(Rp_plus_Rm[0], Rp_plus_Rm[1], Rp_plus_Rm[2], angle, microphone_type[0])
                                          * refl[0] * refl[1] * refl[2] / (4 * M_PI * dist * cTs);
 
                                     for (n = 0; n < Tw; n++)
