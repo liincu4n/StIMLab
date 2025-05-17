@@ -23,13 +23,9 @@ Description : Computes the response of an acoustic source to a microphone
 
 #define ROUND(x) ((x)>=0?(long)((x)+0.5):(long)((x)-0.5))
 
-/*
-    box_ray: Determines if a ray from a virtual source/receiver to a fixed receiver/source
-    penetrates a room boundary.
-    Inputs: L (room dimensions), xv (virtual coordinates), xf (fixed coordinates).
-    Returns: face_num (1-6 for walls, 0 for no penetration).
-*/
 int box_ray(const double L[], double xv[], const double xf[]) {
+ // Same as Step 2
+
     double ndx = xv[0] - xf[0];
     double ndy = xv[1] - xf[1];
     double ndz = xv[2] - xf[2];
@@ -106,14 +102,32 @@ double sinc(double x) {
 }
 
 double sim_microphone(double x, double y, double z, double* angle, char mtype) {
-    return 1.0;
+ if (mtype == 'b' || mtype == 'c' || mtype == 's' || mtype == 'h') {
+     double gain, vartheta, varphi, rho;
+
+     switch (mtype) {
+     ase 'b': rho = 0; break;
+     case 'h': rho = 0.25; break;
+     case 'c': rho = 0.5; break;
+     case 's': rho = 0.75; break;
+     }
+  vartheta = acos(z / sqrt(pow(x, 2) + pow(y, 2) + pow(z, 2)));
+  varphi = atan2(y, x);
+
+  gain = sin(M_PI / 2 - angle[1]) * sin(vartheta) * cos(angle[0] - varphi) +
+               cos(M_PI / 2 - angle[1]) * cos(vartheta);
+  gain = rho + (1 - rho) * gain;
+
+  return gain;
+ }
+ return 1.0;
 }
 
 
 void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const double* ss,
                const double* LL, const double* beta, int nSamples, char* microphone_type,
                double* angle, double* imp) {
- // Same as Step 1 (unchanged)
+ // Same as Step 2
     double* r = new double[3];
     double* s = new double[3];
     double* L = new double[3];
@@ -202,7 +216,8 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
                   "| [1] J.B. Allen and D.A. Berkley, J. Acoust. Soc. Am., 1979.      |\n"
                   "| [2] E. Shalev, I. Cohen, D. Levov, J. Acoust. Soc. Am., 2021.    |\n"
                   "--------------------------------------------------------------------\n\n"
-                  "function h = rir_generator(c, fs, r, s, Lr, Ls, beta_r, beta_s, nsample);\n\n"
+                  "function h = rir_generator(c, fs, r, s, Lr, Ls, beta_r, beta_s, nsample, mtype, orientation
+);\n\n"
                   "Input parameters:\n"
                   " c        : sound velocity in m/s.\n"
                   " fs       : sampling frequency in Hz.\n"
@@ -213,12 +228,14 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
                   " beta_r   : 1 x 6 vector of receiver room reflection coefficients.\n"
                   " beta_s   : 1 x 6 vector of source room reflection coefficients.\n"
                   " nsample  : number of samples to calculate.\n\n"
+                  " mtype       : [omnidirectional, subcardioid, cardioid, hypercardioid, bidirectional], default is omnidirectional.\n"
+                  " orientation : microphone direction [azimuth, elevation] in radians, default is [0 0].\n\n"
                   "Output parameters:\n"
                   " h        : M x nsample matrix of impulse responses.\n\n");
         return;
     }
     if (nrhs < 9) mexErrMsgTxt("At least 9 inputs required.");
-    if (nrhs > 9) mexErrMsgTxt("Too many input arguments.");
+    if (nrhs > 11) mexErrMsgTxt("Too many input arguments.");
     if (nlhs > 1) mexErrMsgTxt("Too many output arguments.");
 
     if (!(mxGetN(prhs[0]) == 1) || !mxIsDouble(prhs[0]) || mxIsComplex(prhs[0]))
@@ -251,8 +268,31 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     const double* beta_s = mxGetPr(prhs[7]);
     int nSamples = (int)mxGetScalar(prhs[8]);
 
-    char microphone_type = 'o';
-    double angle[2] = {0, 0};
+    char* microphone_type;
+    if (nrhs > 9 && !mxIsEmpty(prhs[9])) {
+             microphone_type = new char[mxGetN(prhs[9]) + 1];
+        mxGetString(prhs[9], microphone_type, mxGetN(prhs[9]) + 1);
+    } else {
+        microphone_type = new char[1];
+        microphone_type[0] = 'o';
+    }
+
+    double angle[2];
+    if (nrhs > 10 && !mxIsEmpty(prhs[10])) {
+        const double* orientation = mxGetPr(prhs[10]);
+        if (mxGetN(prhs[10]) == 1) {
+            angle[0] = orientation[0];
+            angle[1] = 0;
+        } else {
+            angle[0] = orientation[0];
+            angle[1] = orientation[1];
+        }
+    } else {
+        angle[0] = 0;
+        angle[1] = 0;
+    }
+
+
 
     plhs[0] = mxCreateDoubleMatrix(nMicrophones, nSamples, mxREAL);
     double* imp = mxGetPr(plhs[0]);
@@ -335,4 +375,6 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
     delete[] s;
     delete[] L;
     delete[] xp;
+    delete[] microphone_type;
+
 }
