@@ -34,6 +34,19 @@ int box_ray(const double L[], double xv[], const double xf[]) {
     double ndy = xv[1] - xf[1];
     double ndz = xv[2] - xf[2];
 
+
+    double sxy = ndx * L[1];
+    double sxz = ndx * L[2];
+    double syx = ndy * L[0];
+    double syz = ndy * L[2];
+    double szx = ndz * L[0];
+    double szy = ndz * L[1];
+
+    double cxy = xf[0] * xv[1] - xf[1] * xv[0];
+    double cxz = xf[0] * xv[2] - xf[2] * xv[0];
+    double cyz = xf[1] * xv[2] - xf[2] * xv[1];
+
+
     double axy = abs(ndx * ndy);
     double axz = abs(ndx * ndz);
     double ayz = abs(ndy * ndz);
@@ -44,50 +57,63 @@ int box_ray(const double L[], double xv[], const double xf[]) {
 
     if (xv[0] < 0 && xf[0] > 0) {
         tau = -xv[0] * ayz;
-        if (tau < face_tau) face_num = 1;
+        if (tau < face_tau && cxy >= 0 && cxz >= 0 && cxy <= -sxy && cxz <= -sxz) { 
+         face_tau = tau;
+         face_num = 1;
+        }
     } else if (xf[0] < L[0] && xv[0] > L[0]) {
         tau = (xv[0] - L[0]) * ayz;
-        if (tau < face_tau) face_num = 2;
+        if (tau < face_tau && cxy <= syx && cxz <= szx && cxy >= syx - sxy && cxz >= szx - sxz) {
+         face_tau = tau;
+         face_num = 2;
+        }
     }
     if (xv[1] < 0 && xf[1] > 0) {
         tau = -xv[1] * axz;
-        if (tau < face_tau) face_num = 3;
+        if (tau < face_tau && cxy <= 0 && cyz >= 0 && cxy >= syx && cyz <= -syz) {
+         face_tau = tau;
+         face_num = 3;
+    }
     } else if (xv[1] > L[1] && xf[1] < L[1]) {
         tau = (xv[1] - L[1]) * axz;
-        if (tau < face_tau) face_num = 4;
+        if (tau < face_tau && cxy >= -sxy && cyz <= szy && cxy <= syx - sxy && cyz >= szy - syz) {
+         
+         face_tau = tau;
+         face_num = 4;
+        }
     }
-    if (xv[2] < 0 && xf[2 OPTIONAL: > 0) {
+    if (xv[2] < 0 && xf[2] > 0) {
         tau = -xv[2] * axy;
-        if (tau < face_tau) face_num = 5;
+        if (tau < face_tau && cxz <= 0 && cyz <= 0 && cxz >= szx && cyz >= szy) {
+         face_tau = tau;
+         face_num = 5;
+        }
     } else if (xv[2] > L[2] && xf[2] < L[2]) {
         tau = (xv[2] - L[2]) * axy;
-        if (tau < face_tau) face_num = 6;
+        if (tau < face_tau && cxz >= -sxz && cyz >= -syz && cxz <= szx - sxz && cyz <= szy - syz) {
+         face_tau = tau;
+         face_num = 6;
+        }
     }
 
     return face_num;
 }
 
-/*
-    sinc: Computes sinc(x) = sin(x)/x for low-pass filtering.
-*/
+
 double sinc(double x) {
     if (x == 0) return 1.0;
     return sin(x) / x;
 }
 
-/*
-    sim_microphone: Models microphone gain (default omnidirectional).
-*/
 double sim_microphone(double x, double y, double z, double* angle, char mtype) {
     return 1.0;
 }
 
-/*
-    ReciverIM: Computes RIR using receiver image method.
-*/
+
 void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const double* ss,
                const double* LL, const double* beta, int nSamples, char* microphone_type,
                double* angle, double* imp) {
+ // Same as Step 1 (unchanged)
     double* r = new double[3];
     double* s = new double[3];
     double* L = new double[3];
@@ -167,11 +193,52 @@ void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const do
     delete[] xp;
 }
 
-/*
-    mexFunction: MATLAB interface for RIR generation.
-*/
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
-    if (nrhs < 9) mexErrMsgTxt("At least 9 inputs required: c, fs, r, s, Lr, Ls, beta_r, beta_s, nSamples.");
+    if (nrhs == 0) {
+        mexPrintf("--------------------------------------------------------------------\n"
+                  "| Room Impulse Response Generator                                  |\n"
+                  "| Computes the response of an acoustic source to one or more       |\n"
+                  "| microphones in a reverberant room using the image method [1,2].  |\n"
+                  "| [1] J.B. Allen and D.A. Berkley, J. Acoust. Soc. Am., 1979.      |\n"
+                  "| [2] E. Shalev, I. Cohen, D. Levov, J. Acoust. Soc. Am., 2021.    |\n"
+                  "--------------------------------------------------------------------\n\n"
+                  "function h = rir_generator(c, fs, r, s, Lr, Ls, beta_r, beta_s, nsample);\n\n"
+                  "Input parameters:\n"
+                  " c        : sound velocity in m/s.\n"
+                  " fs       : sampling frequency in Hz.\n"
+                  " r        : M x 3 array of receiver coordinates (x,y,z) in m.\n"
+                  " s        : 1 x 3 vector of source coordinates (x,y,z) in m.\n"
+                  " Lr       : 1 x 3 vector of receiver room dimensions (x,y,z) in m.\n"
+                  " Ls       : 1 x 3 vector of source room dimensions (x,y,z) in m.\n"
+                  " beta_r   : 1 x 6 vector of receiver room reflection coefficients.\n"
+                  " beta_s   : 1 x 6 vector of source room reflection coefficients.\n"
+                  " nsample  : number of samples to calculate.\n\n"
+                  "Output parameters:\n"
+                  " h        : M x nsample matrix of impulse responses.\n\n");
+        return;
+    }
+    if (nrhs < 9) mexErrMsgTxt("At least 9 inputs required.");
+    if (nrhs > 9) mexErrMsgTxt("Too many input arguments.");
+    if (nlhs > 1) mexErrMsgTxt("Too many output arguments.");
+
+    if (!(mxGetN(prhs[0]) == 1) || !mxIsDouble(prhs[0]) || mxIsComplex(prhs[0]))
+        mexErrMsgTxt("Invalid input c arguments!");
+    if (!(mxGetN(prhs[1]) == 1) || !mxIsDouble(prhs[1]) || mxIsComplex(prhs[1]))
+        mexErrMsgTxt("Invalid input fs arguments!");
+    if (!(mxGetN(prhs[2]) == 3) || !mxIsDouble(prhs[2]) || mxIsComplex(prhs[2]))
+        mexErrMsgTxt("Invalid input r arguments!");
+    if (!(mxGetN(prhs[3]) == 3) || !mxIsDouble(prhs[3]) || mxIsComplex(prhs[3]))
+        mexErrMsgTxt("Invalid input s arguments!");
+    if (!(mxGetN(prhs[4]) == 3) || !mxIsDouble(prhs[4]) || mxIsComplex(prhs[4]))
+        mexErrMsgTxt("Invalid input Lr arguments!");
+    if (!(mxGetN(prhs[5]) == 3) || !mxIsDouble(prhs[5]) || mxIsComplex(prhs[5]))
+        mexErrMsgTxt("Invalid input Ls arguments!");
+    if (!(mxGetN(prhs[6]) == 6) || !mxIsDouble(prhs[6]) || mxIsComplex(prhs[6]))
+        mexErrMsgTxt("Invalid input beta_r arguments!");
+    if (!(mxGetN(prhs[7]) == 6) || !mxIsDouble(prhs[7]) || mxIsComplex(prhs[7]))
+        mexErrMsgTxt("Invalid input beta_s arguments!");
+    if (!(mxGetN(prhs[8]) == 1) || !mxIsDouble(prhs[8]) || mxIsComplex(prhs[8]))
+        mexErrMsgTxt("Invalid input nsample arguments!");
 
     double c = mxGetScalar(prhs[0]);
     double fs = mxGetScalar(prhs[1]);
@@ -239,7 +306,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
                                 if (face_num == 0) continue;
 
-                                ReciverIM(c, fs, rr, nMicrophones, ss, LL_r, beta_r, nSamples, &microphone_type, angle, imp);
+                                ReciverIM(c, fs, rr, nMicrophones, ss, LL_r, beta_r, nSamples, microphone_type, angle, imp);
 
                                 fdist = floor(dist);
                                 if (fdist < nSamples) {
