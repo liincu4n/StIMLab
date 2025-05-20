@@ -105,7 +105,7 @@ double sim_microphone(double x, double y, double z, double* angle, char mtype) {
      double gain, vartheta, varphi, rho;
 
      switch (mtype) {
-     ase 'b': rho = 0; break;
+     case 'b': rho = 0; break;
      case 'h': rho = 0.25; break;
      case 'c': rho = 0.5; break;
      case 's': rho = 0.75; break;
@@ -125,7 +125,7 @@ double sim_microphone(double x, double y, double z, double* angle, char mtype) {
 
 void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const double* ss,
                const double* LL, const double* beta_input, int nSamples, char* microphone_type,
-               double* angle, double* imp) {
+               double* angle, double* imp, int dim) {
     double* beta = new double[6];
     double reverberation_time = 0;
 
@@ -147,6 +147,11 @@ void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const do
         for (int i = 0; i < 6; i++)
             beta[i] = beta_input[i];
     }
+     if (dim == 2) {
+        beta[4] = 0;
+        beta[5] = 0;
+    }
+ 
 
     double* r = new double[3];
     double* s = new double[3];
@@ -171,13 +176,13 @@ void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const do
 
         n1 = (int)ceil(nSamples / (2 * L[0]));
         n2 = (int)ceil(nSamples / (2 * L[1]));
-        n3 = (int)ceil(nSamples / (2 * L[2]));
+        n3 = dim == 2 ? 0 : (int)ceil(nSamples / (2 * L[2]));
 
         for (mx = -n1; mx <= n1; mx++) {
             Rm[0] = 2 * mx * L[0];
             for (my = -n2; my <= n2; my++) {
                 Rm[1] = 2 * my * L[1];
-                for (mz = -n3; mz <= n3; mz++) {
+                for (mz = dim == 2 ? 0 : -n3; mz <= (dim == 2 ? 0 : n3); mz++) {
                     Rm[2] = 2 * mz * L[2];
                     for (q = 0; q <= 1; q++) {
                         Rp_plus_Rm[0] = (1 - 2 * q) * r[0] - s[0] + Rm[0];
@@ -187,7 +192,7 @@ void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const do
                             Rp_plus_Rm[1] = (1 - 2 * j) * r[1] - s[1] + Rm[1];
                             xp[1] = 2 * my * LL[1] + (1 - 2 * j) * rr[idxMicrophone + nMicrophones];
                             refl[1] = pow(beta[2], abs(my - j)) * pow(beta[3], abs(my));
-                            for (k = 0; k <= 1; k++) {
+                            for (k = dim == 2 ? 0 : 0; k <= (dim == 2 ? 0 : 1); k++) {
                                 Rp_plus_Rm[2] = (1 - 2 * k) * r[2] - s[2] + Rm[2];
                                 xp[2] = 2 * mz * LL[2] + (1 - 2 * k) * rr[idxMicrophone + 2 * nMicrophones];
                                 refl[2] = pow(beta[4], abs(mz - k)) * pow(beta[5], abs(mz));
@@ -225,6 +230,7 @@ void ReciverIM(double c, double fs, const double* rr, int nMicrophones, const do
     delete[] s;
     delete[] L;
     delete[] xp;
+    delete[] beta;
 }
 
 void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
@@ -255,7 +261,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         return;
     }
     if (nrhs < 9) mexErrMsgTxt("At least 9 inputs required.");
-    if (nrhs > 11) mexErrMsgTxt("Too many input arguments.");
+    if (nrhs > 12) mexErrMsgTxt("Too many input arguments.");
     if (nlhs > 1) mexErrMsgTxt("Too many output arguments.");
 
     if (!(mxGetN(prhs[0]) == 1) || !mxIsDouble(prhs[0]) || mxIsComplex(prhs[0]))
@@ -311,9 +317,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
         angle[0] = 0;
         angle[1] = 0;
     }
-
-
-
+     int dim = 3;
+    if (nrhs > 11 && !mxIsEmpty(prhs[11])) {
+        dim = (int)mxGetScalar(prhs[11]);
+        if (dim != 2 && dim != 3)
+            mexErrMsgTxt("Invalid input dim: must be 2 or 3.");
+    }
+ 
     plhs[0] = mxCreateDoubleMatrix(nMicrophones, nSamples, mxREAL);
     double* imp = mxGetPr(plhs[0]);
 
@@ -340,13 +350,13 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
 
         n1 = (int)ceil(nSamples / (2 * L[0]));
         n2 = (int)ceil(nSamples / (2 * L[1]));
-        n3 = (int)ceil(nSamples / (2 * L[2]));
+        n3 = dim == 2 ? 0 :(int)ceil(nSamples / (2 * L[2]));
 
         for (mx = -n1; mx <= n1; mx++) {
             Rm[0] = 2 * mx * L[0];
             for (my = -n2; my <= n2; my++) {
                 Rm[1] = 2 * my * L[1];
-                for (mz = -n3; mz <= n3; mz++) {
+                for (mz = dim == 2 ? 0 : -n3; mz <= (dim == 2 ? 0 : n3); mz++) {
                     Rm[2] = 2 * mz * L[2];
                     for (q = 0; q <= 1; q++) {
                         Rp_plus_Rm[0] = (1 - 2 * q) * s[0] - r[0] + Rm[0];
@@ -356,7 +366,7 @@ void mexFunction(int nlhs, mxArray *plhs[], int nrhs, const mxArray *prhs[]) {
                             Rp_plus_Rm[1] = (1 - 2 * j) * s[1] - r[1] + Rm[1];
                             xp[1] = 2 * my * LL_s[1] + (1 - 2 * j) * ss[1];
                             refl[1] = pow(beta_s[2], abs(my - j)) * pow(beta_s[3], abs(my));
-                            for (k = 0; k <= 1; k++) {
+                            for (k = dim == 2 ? 0 : 0; k <= (dim == 2 ? 0 :1); k++) {
                                 Rp_plus_Rm[2] = (1 - 2 * k) * s[2] - r[2] + Rm[2];
                                 xp[2] = 2 * mz * LL_s[2] + (1 - 2 * k) * ss[2];
                                 refl[2] = pow(beta_s[4], abs(mz - k)) * pow(beta_s[5], abs(mz));
